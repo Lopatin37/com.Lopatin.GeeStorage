@@ -1,3 +1,4 @@
+
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelOutboundHandlerAdapter;
@@ -8,9 +9,21 @@ import java.nio.ByteBuffer;
 public class SendingHandler extends ChannelOutboundHandlerAdapter {
     @Override
     public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) throws Exception {
-        byte[] bytes = (byte[])msg;
-        ByteBuf buf = ctx.alloc().buffer(bytes.length);
-        buf.writeBytes(bytes);
-        ctx.writeAndFlush(buf);
+        ByteBuf byteBuf;
+        if(msg instanceof ByteBuf) {
+            byteBuf = (ByteBuf) msg;
+        }
+//        if(msg instanceof byte[]){
+//            byte[] b = (byte[])msg;
+//            byteBuf = ctx.alloc().buffer(b.length);
+//            byteBuf.writeBytes(b);
+//        }
+        else {
+            byte b = (byte) msg;
+            byteBuf = ctx.alloc().buffer(1);
+            byteBuf.writeByte(b);
+        }
+        ctx.writeAndFlush(byteBuf);
+        byteBuf.release();
     }
 }

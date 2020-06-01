@@ -1,2 +1,0 @@
-Hello client1 from the server.
-Nice to meet you.

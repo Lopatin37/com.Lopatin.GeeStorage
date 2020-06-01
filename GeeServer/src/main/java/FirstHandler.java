@@ -2,9 +2,12 @@ import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 
-import java.nio.ByteBuffer;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 
 
 public class FirstHandler extends ChannelInboundHandlerAdapter {
@@ -13,7 +16,9 @@ public class FirstHandler extends ChannelInboundHandlerAdapter {
     }
     private State currentState;
     private static List<String> currentUsers = new ArrayList<>();
-    int lengthInt;
+    private int lengthInt;
+    private String[] strings;
+    private ByteBuf outboundByteBuf;
 
     public FirstHandler() {
         currentState = State.IDLE;
@@ -35,7 +40,7 @@ public class FirstHandler extends ChannelInboundHandlerAdapter {
 
             if(currentState == State.LOGIN_PASSWORD_LENGTH) {
                 if(buf.readableBytes() >= 4) {
-                    lengthInt = buf.readByte();
+                    lengthInt = buf.readInt();
                     currentState = State.LOGIN_PASSWORD;
                     System.out.println("Received LogPas length: " + lengthInt);
                 }
@@ -47,10 +52,10 @@ public class FirstHandler extends ChannelInboundHandlerAdapter {
                     byte[] logPassBytes = new byte[lengthInt];
                     buf.readBytes(logPassBytes);
                     String logPass = new String(logPassBytes);
-                    String[] strings = logPass.split(" ");
+                    strings = logPass.split(" ");
                     System.out.println("Login and password are " + logPass);
                     if(currentUsers.contains(strings[0])) {
-                        ctx.writeAndFlush(ByteBuffer.allocate(1).put((byte)21));
+                        ctx.writeAndFlush((byte)21);
                         buf.release();
                         return;
                     }
@@ -58,20 +63,36 @@ public class FirstHandler extends ChannelInboundHandlerAdapter {
                     DBHandler db = DBHandler.getInstance();
                     System.out.println("Starting authorization");
                     if(db.authorization(strings[0], strings[1])) {
-                        currentState = State.AUTHORIZED;
                         System.out.println("Client authorized");
                         currentUsers.add(strings[0]);
-                        ctx.writeAndFlush(ByteBuffer.allocate(1).put((byte)25));
+                        ctx.writeAndFlush((byte)25);
+                        try {
+                            System.out.println("Making List");
+                            List<String> fileList = Files.list(Paths.get("serverStorage/" + strings[0]))
+                                    .filter(p -> !Files.isDirectory(p))
+                                    .map(p -> p.getFileName().toString())
+                                    .collect(Collectors.toList());
+                            outboundByteBuf = ctx.alloc().buffer(1024 * 1024);
+                            for(String s : fileList) {
+                                System.out.println(s);
+                                outboundByteBuf.writeInt(s.getBytes().length);
+                                outboundByteBuf.writeBytes(s.getBytes());
+                            }
+                            ctx.writeAndFlush(outboundByteBuf);
+                        }catch (IOException e){
+                            e.printStackTrace();
+                        }
+                        currentState = State.AUTHORIZED;
                     } else {
-                        ctx.writeAndFlush(ByteBuffer.allocate(1).put((byte)22));
+                        ctx.writeAndFlush((byte)22);
                     }
                 }
             }
 
             if(currentState == State.AUTHORIZED) {
+                System.out.println("currentState == State.AUTHORIZED");
                 if(buf.readableBytes() > 0) {
-                    ctx.fireChannelRead(buf.copy());
-                    buf.release();
+                    ctx.fireChannelRead(buf);
                     return;
                 }
             }
